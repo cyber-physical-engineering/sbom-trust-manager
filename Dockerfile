@@ -1,21 +1,20 @@
-# SBOM Trust Manager - Docker Image
-# Sign and verify SBOMs for supply chain security (EO 14028 compliance)
+# SBOM Trust Manager: Docker image
+# Hashes and signs SBOM files. cosign is installed for real signing; the image was not built in the October 2026 checks.
 
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.title="sbom-trust-manager"
-LABEL org.opencontainers.image.description="Cryptographically sign and verify SBOMs for supply chain security"
-LABEL org.opencontainers.image.vendor="Big Data Plumbing"
+LABEL org.opencontainers.image.description="Hash an SBOM file and write or check a signature bundle (prototype)"
 
-# Install cosign for real signing (optional, falls back to mock if not available)
+# curl, to fetch cosign
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install cosign (optional - will use mock if not available)
+# Install cosign (linux-amd64 only). Without it, sign and verify need --mock.
 RUN curl -sSL https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o /usr/local/bin/cosign \
     && chmod +x /usr/local/bin/cosign \
-    || echo "Cosign installation failed, will use mock signer"
+    || echo "cosign download failed; sign and verify will need --mock"
 
 WORKDIR /app
 
@@ -27,10 +26,6 @@ COPY sbom_trust ./sbom_trust
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir .
 
-ENV PORT=8080
-EXPOSE 8080
-
-# Default: run the CLI (can be overridden to run API)
 ENTRYPOINT ["sbom-trust"]
 CMD ["--help"]
 
