@@ -1,106 +1,68 @@
 # SBOM Trust Manager
 
-**Prevent supply chain attacks. Cryptographically sign and verify your software bill of materials.**
+A Python command-line tool that hashes a software bill of materials (SBOM), writes a signature bundle, and checks a file against its bundle. Real signing needs the `cosign` binary. A mock mode shows the bundle format and the hash check without a key.
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](pyproject.toml)
-[![Docker](https://img.shields.io/badge/docker-ready-green.svg)](Dockerfile)
+**Status: prototype.** 13 tests pass, and `ruff check .` and `mypy sbom_trust` (strict) are clean (October 2, 2026; Python 3.9.6, Apple Silicon Mac). The walkthrough below runs as written. The cosign path was not run.
 
-## The Problem
+James Thornton set the architecture and requirements. The code was written with AI-assisted development in late 2025. The tests and checks were re-run in October 2026.
 
-The US Government (Executive Order 14028) now **mandates** a Software Bill of Materials (SBOM) for software it buys. Medical device manufacturers must track every component. But generating an SBOM is only half the battle — you need to **prove** its integrity.
+## What it does
 
-## The Solution
+Four commands: `sign`, `verify`, `inspect` and `generate-example`.
 
-SBOM Trust Manager provides:
-1. **Signing**: Cryptographically sign SBOMs using Sigstore (cosign) or local keys
-2. **Verification**: Verify SBOM authenticity and integrity
-3. **Tamper Detection**: Detect if any byte of the SBOM has been modified
+- `sign` takes the SHA-256 of the whole file and writes a JSON bundle: `sbom_hash`, `signature`, `certificate`, `transparency_log_entry`, `signed_at` and `mock`.
+- `sign --mock` writes a placeholder signature with no key and marks the bundle `"mock": true`. It exists to show the format.
+- With cosign installed, `sign` calls `cosign sign-blob`, keyless by default or with `--no-keyless --key <file>` for a local key. Without cosign, `sign` and `verify` exit 1 unless `--mock` is given.
+- `verify` recomputes the file's SHA-256 and compares it with the bundle. A one-byte change fails. It refuses a mock bundle without `--mock`, and a real bundle with `--mock`.
+- `inspect` prints the bundle's fields and says "Mock: yes" for a mock bundle.
+- `generate-example` writes a small CycloneDX 1.5 SBOM that validates against the official 1.5 schema.
+- The tool works on any file. It does not parse or validate the SBOM.
 
-```
-┌──────────────┐     ┌────────────────┐     ┌─────────────────┐
-│  Your Code   │ ──▶ │  sbom-trust    │ ──▶ │  Signed SBOM    │
-│  + Deps      │     │  sign          │     │  + Bundle       │
-└──────────────┘     └────────────────┘     └─────────────────┘
-```
-
-## Features
-
-- 📦 **Format Agnostic**: Signs SPDX, CycloneDX, or any file format
-- 🔐 **Sigstore Integration**: Uses `cosign` for keyless signing (OIDC)
-- 🔑 **Local Keys**: Supports local key signing for offline environments
-- 🧪 **Mock Mode**: Built-in mock signer for testing/dev without external tools
-- 🐳 **Docker Ready**: Includes `cosign` installation (optional)
-
-## Quick Start
-
-### CLI Usage
+## Quick start
 
 ```bash
-# Install
 pip install -e .
 
-# Generate an example SBOM (CycloneDX)
 sbom-trust generate-example --output app.sbom.json
-
-# Sign with Mock signer (good for testing)
 sbom-trust sign app.sbom.json --mock --output app.sbom.sig.json
-
-# Verify the signature
 sbom-trust verify app.sbom.json --signature app.sbom.sig.json --mock
-
-# Inspect signature details
 sbom-trust inspect app.sbom.sig.json
 ```
 
-### Production Signing (with Cosign)
+All four ran in a clean virtual environment on October 2, 2026. Change one byte of `app.sbom.json` and `verify` reports a hash mismatch and exits 1.
 
-Prerequisite: Install [cosign](https://docs.sigstore.dev/cosign/installation/)
+Run the tests:
 
 ```bash
-# Sign using Sigstore (opens browser for OIDC login)
-sbom-trust sign app.sbom.json
+pip install -e ".[dev]"
+pytest
+```
 
-# Verify using Sigstore
+## Signing with cosign
+
+Install cosign from https://docs.sigstore.dev/cosign/system_config/installation/. Then:
+
+```bash
+sbom-trust sign app.sbom.json                        # keyless; opens a browser for the OIDC login
+sbom-trust sign app.sbom.json --no-keyless --key cosign.key
 sbom-trust verify app.sbom.json
 ```
 
-### Docker Usage
+This path was not run in the October 2026 checks, and it has two known gaps. `verify` passes no `--certificate-identity` or `--certificate-oidc-issuer` flag, which current cosign requires for keyless verification, so keyless verification is not expected to pass as coded. There is no verify path for a bundle signed with a local key.
 
-The Docker image attempts to install `cosign`. If unavailable, it falls back to mock mode.
+## Where SBOMs are required
 
-```bash
-# Build
-docker build -t sbom-trust .
+For cyber devices, FD&C Act section 524B(b)(3) requires an SBOM in the premarket submission, and FDA's premarket cybersecurity guidance (February 3, 2026) says so plainly. Executive Order 14028 (2021) named SBOMs among recommended software supply-chain practices. OMB M-26-05 (January 2026) rescinded memoranda M-22-18 and M-23-16, and it leaves a federal SBOM as a contract option an agency may choose. Neither rule asks for a signed SBOM. Signing one adds an integrity check that this prototype explores.
 
-# Sign an SBOM
-docker run --rm -v $(pwd):/data sbom-trust \
-  sign /data/app.sbom.json --mock --output /data/app.sbom.sig.json
-```
+## Limits
 
-## Compliance Mappings
-
-| Requirement | Source | How SBOM Trust Manager Helps |
-|-------------|--------|------------------------------|
-| SBOM Integrity | EO 14028 | ✅ Cryptographic signatures |
-| Provenance | SLSA | ✅ Signature bundles |
-| Component Tracking | 21 CFR 820.30 | ✅ Verifiable artifacts |
-
-## Development
-
-```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest tests/
-```
-
-## Related Projects
-
-- [fhir-verifiable-credentials](../fhir-verifiable-credentials) - FHIR to VC conversion
-- [compliance-evidence-locker](../compliance-evidence-locker) - Automated audit evidence
+- Mock mode has no key. Anyone can make a mock bundle that verifies, so it catches accidental edits only.
+- The hash covers the file, not the bundle. `signed_at`, `certificate` and `transparency_log_entry` can be changed freely.
+- The cosign path is untested here. Keyless verification passes no identity flags, key-signed bundles have no verify path, and the `sign-blob` flags may be stale against cosign v3.
+- Nothing here enforces policy or generates keys.
+- The Dockerfile fetches cosign for linux-amd64 only, and it was not built in October 2026.
+- The tests cover the mock path and the command line. The cosign backend is untested.
 
 ## License
 
-Apache 2.0 - See [LICENSE](LICENSE)
+Apache 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
