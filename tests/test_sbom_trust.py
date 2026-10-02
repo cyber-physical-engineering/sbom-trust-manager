@@ -26,7 +26,7 @@ def _create_example_sbom(path: Path) -> None:
     path.write_text(json.dumps(sbom))
 
 
-def test_mock_signer_signs_sbom():
+def test_mock_signer_signs_sbom() -> None:
     """Test that MockSignerBackend produces a signature."""
     backend = MockSignerBackend(signer_id="test@example.com")
     signer = SBOMSigner(backend)
@@ -46,7 +46,7 @@ def test_mock_signer_signs_sbom():
         path.unlink(missing_ok=True)
 
 
-def test_mock_signer_verification_succeeds():
+def test_mock_signer_verification_succeeds() -> None:
     """Test that valid signatures verify correctly."""
     backend = MockSignerBackend()
     signer = SBOMSigner(backend)
@@ -64,7 +64,7 @@ def test_mock_signer_verification_succeeds():
         path.unlink(missing_ok=True)
 
 
-def test_mock_signer_detects_tampered_file():
+def test_mock_signer_detects_tampered_file() -> None:
     """Test that tampered files fail verification."""
     backend = MockSignerBackend()
     signer = SBOMSigner(backend)
@@ -83,14 +83,14 @@ def test_mock_signer_detects_tampered_file():
         # Should raise ValueError due to hash mismatch
         try:
             signer.verify(path, bundle)
-            assert False, "Should have raised ValueError"
+            raise AssertionError("Should have raised ValueError")
         except ValueError as e:
             assert "hash mismatch" in str(e).lower()
     finally:
         path.unlink(missing_ok=True)
 
 
-def test_signature_bundle_serialization():
+def test_signature_bundle_serialization() -> None:
     """Test SignatureBundle to/from dict."""
     bundle = SignatureBundle(
         sbom_hash="abc123" * 10 + "abcd",
@@ -110,7 +110,7 @@ def test_signature_bundle_serialization():
     assert restored.signed_at == bundle.signed_at
 
 
-def test_signature_bundle_json_roundtrip():
+def test_signature_bundle_json_roundtrip() -> None:
     """Test SignatureBundle JSON serialization."""
     bundle = SignatureBundle(
         sbom_hash="hash123",
@@ -128,7 +128,7 @@ def test_signature_bundle_json_roundtrip():
     assert restored.certificate is None
 
 
-def test_deterministic_mock_signatures():
+def test_deterministic_mock_signatures() -> None:
     """Test that mock signatures are deterministic for the same content."""
     backend = MockSignerBackend(signer_id="test@example.com")
 
@@ -144,11 +144,18 @@ def test_deterministic_mock_signatures():
     assert sig1 != sig3  # Different content = different signature
 
 
-def test_mock_signer_includes_tlog_entry():
-    """Test that mock signer includes a transparency log entry."""
+def test_mock_signer_reports_no_tlog_and_marks_bundle() -> None:
+    """The mock signer claims no transparency-log entry and marks its bundles."""
     backend = MockSignerBackend()
     _, _, tlog = backend.sign(b"test data")
+    assert tlog is None
 
-    assert tlog is not None
-    assert "tlog" in tlog.lower()
-
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = Path(f.name)
+        _create_example_sbom(path)
+    try:
+        bundle = SBOMSigner(backend).sign(path)
+        assert bundle.mock is True
+        assert SignatureBundle.from_dict(bundle.to_dict()).mock is True
+    finally:
+        path.unlink(missing_ok=True)

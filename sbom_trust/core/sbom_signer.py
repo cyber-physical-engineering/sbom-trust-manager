@@ -1,7 +1,8 @@
-"""SBOM Signing and Verification with Sigstore/cosign.
+"""SBOM signing and verification.
 
-This module provides cryptographic signing of Software Bills of Materials (SBOM)
-for supply chain security compliance (EO 14028).
+Hashes an SBOM file with SHA-256 and wraps the digest in a signature bundle.
+The mock backend uses no key and only shows the format. The cosign backend
+shells out to cosign; it was not exercised in the October 2026 checks.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ class SignatureBundle:
     certificate: Optional[str]
     transparency_log_entry: Optional[str]
     signed_at: str
+    mock: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -35,6 +37,7 @@ class SignatureBundle:
             "certificate": self.certificate,
             "transparency_log_entry": self.transparency_log_entry,
             "signed_at": self.signed_at,
+            "mock": self.mock,
         }
 
     def to_json(self, indent: int = 2) -> str:
@@ -48,11 +51,14 @@ class SignatureBundle:
             certificate=data.get("certificate"),
             transparency_log_entry=data.get("transparency_log_entry"),
             signed_at=data.get("signed_at", ""),
+            mock=bool(data.get("mock", False)),
         )
 
 
 class SignerBackend(ABC):
     """Abstract base class for signing backends."""
+
+    is_mock: bool = False
 
     @abstractmethod
     def sign(self, data: bytes) -> tuple[str, Optional[str], Optional[str]]:
@@ -71,7 +77,13 @@ class SignerBackend(ABC):
 
 
 class MockSignerBackend(SignerBackend):
-    """Mock signer for testing without cosign installed."""
+    """Mock signer for testing without cosign installed.
+
+    It uses no key, so anyone can produce a bundle it accepts. It only shows
+    the bundle format and the hash check; it is not a signature.
+    """
+
+    is_mock = True
 
     def __init__(self, signer_id: str = "test-signer@example.com"):
         self.signer_id = signer_id
@@ -88,9 +100,8 @@ class MockSignerBackend(SignerBackend):
             f"MOCK_CERT:{self.signer_id}".encode()
         ).decode()
 
-        mock_tlog = "tlog entry created with index: 12345678"
-
-        return mock_sig, mock_cert, mock_tlog
+        # No transparency log is involved, so none is reported.
+        return mock_sig, mock_cert, None
 
     def verify(
         self,
@@ -259,6 +270,7 @@ class SBOMSigner:
             certificate=certificate,
             transparency_log_entry=tlog_entry,
             signed_at=datetime.now(timezone.utc).isoformat(),
+            mock=self.backend.is_mock,
         )
 
     def verify(
@@ -280,13 +292,13 @@ class SBOMSigner:
 
         # Check hash first
         if current_hash != bundle.sbom_hash:
-            raise ValueError("SBOM hash mismatch - file has been modified")
+            raise ValueError("SBOM hash mismatch: the file changed after it was signed")
 
         return self.backend.verify(sbom_data, bundle.signature, bundle.certificate)
 
 
 class SBOMVerifier:
-    """Verify SBOM signatures (alias for backwards compatibility)."""
+    """Verify SBOM signatures; a thin wrapper over SBOMSigner.verify."""
 
     def __init__(self, backend: Optional[SignerBackend] = None):
         self._signer = SBOMSigner(backend)
@@ -299,6 +311,7 @@ class SBOMVerifier:
         certificate_oidc_issuer: Optional[str] = None,
     ) -> bool:
         """Verify an SBOM signature."""
-        # Note: certificate_identity and certificate_oidc_issuer are for
-        # Sigstore keyless verification - not implemented in mock
+        # certificate_identity and certificate_oidc_issuer are accepted but
+        # not yet passed to cosign; keyless verification needs them. See the
+        # README's limits.
         return self._signer.verify(sbom_path, signature_bundle)
