@@ -4,6 +4,8 @@ A Python command-line tool that hashes a software bill of materials (SBOM), writ
 
 **Status: prototype.** 13 tests pass, and `ruff check .` and `mypy sbom_trust` (strict) are clean (October 2, 2026; Python 3.9.6, Apple Silicon Mac). The walkthrough below runs as written. The cosign path was not run.
 
+[![CI](https://github.com/cyber-physical-engineering/sbom-trust-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/cyber-physical-engineering/sbom-trust-manager/actions/workflows/ci.yml)
+
 James Thornton set the architecture and requirements. The code was written with AI-assisted development in late 2025. The tests and checks were re-run in October 2026.
 
 ## What it does
